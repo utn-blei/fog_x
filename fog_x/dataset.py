@@ -147,6 +147,8 @@ class Dataset:
         self.act_keys = []
         self.step_keys = []
 
+        self.duplicate_warning_printed = False
+
     def new_episode(self, metadata: Optional[Dict[str, Any]] = None) -> Episode:
         """
         Create a new episode / trajectory.
@@ -443,6 +445,26 @@ class Dataset:
                 ret = self._load_rtx_step_data_from_tf_step(
                     step, data_type, 
                 )
+                # Monkey patching ret for datasets with duplicate keys
+                # PROBLEM: When two keys have the same name - for example in
+                # proprioception and action, the later overwrites the first
+                keys = [r["feature"] for r in ret]
+                # check if there are duplicates
+                if len(keys) != len(set(keys)):
+                    if not self.duplicate_warning_printed:
+                        logger.warning(f"Duplicate keys in input data.")
+                        logger.warning(f"Fog X cannot natively handle this." 
+                                    "We rename them for now in the order of "
+                                    "their appearence:")
+                    for i in range(len(ret)):
+                        ret[i]["feature"] = f"{ret[i]['feature']}_{i}"
+
+                    keys = [r["feature"] for r in ret]
+                    if not self.duplicate_warning_printed:
+                        self.duplicate_warning_printed = True
+                        logger.warning(f"New keys: {keys}")
+
+
                 for r in ret:
                     fog_episode.add(**r)
 
