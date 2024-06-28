@@ -7,6 +7,7 @@ import numpy as np
 import polars
 import pandas
 from tqdm import tqdm
+from multiprocessing import Process
 
 from fog_x.database import (
     DatabaseConnector,
@@ -148,6 +149,7 @@ class Dataset:
         self.step_keys = []
 
         self.duplicate_warning_printed = False
+        self.writer_process = None
 
     def new_episode(self, metadata: Optional[Dict[str, Any]] = None) -> Episode:
         """
@@ -468,7 +470,9 @@ class Dataset:
                 for r in ret:
                     fog_episode.add(**r)
 
-            fog_episode.close()
+            if self.writer_process is not None and self.writer_process.is_alive():
+                self.writer_process.join()
+            self.writer_process = Process(target=fog_episode.close)
 
 
     def _prepare_rtx_metadata(
@@ -738,6 +742,10 @@ class Dataset:
 
         hf_dataset = datasets.load_dataset("parquet", data_files=parquet_files)
         return hf_dataset
+    
+    def __del__(self):
+        if self.writer_process is not None and self.writer_process.is_alive():
+            self.writer_process.join()
     
 class PyTorchDataset(Dataset):
     def __init__(self, episodes, features):
