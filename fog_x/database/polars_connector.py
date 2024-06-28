@@ -196,12 +196,17 @@ class LazyFrameConnector(PolarsConnector):
         # dataset = [self.dataset.to_table(), ]
         logger.info(f"Save table {table_name} to {self.path}.")
         basename_template = f"{table_name}-{{i}}.parquet"
+        
+        # Set Compression
+        file_options = ds.ParquetFileFormat().make_write_options(compression='brotli', compression_level=9)
+
         ds.write_dataset(
             dataset,
             base_dir=self.path,
             basename_template=basename_template,
             format="parquet",
             existing_data_behavior="overwrite_or_ignore",
+            file_options=file_options,
         )
 
     def get_dataset_table(self, reload:bool = False):
