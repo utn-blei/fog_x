@@ -19,6 +19,7 @@ from fog_x.database import (
 )
 from fog_x.episode import Episode
 from fog_x.feature import FeatureType
+import polars as pl
 
 logger = logging.getLogger(__name__)
 
@@ -711,7 +712,7 @@ class Dataset:
         episodes = self.read_by(metadata_df)
         return episodes
 
-    def pytorch_dataset_builder(self, metadata=None, **kwargs):
+    def pytorch_dataset_builder(self, metadata=None, sample_level: str = "episode", **kwargs):
         """
         Used for loading current dataset as a PyTorch dataset.
         To be used with `torch.utils.data.DataLoader`.
@@ -722,7 +723,12 @@ class Dataset:
         episodes = self.get_episodes_from_metadata(metadata)
 
         # Initialize the PyTorch dataset with the episodes and features
-        pytorch_dataset = PyTorchDataset(episodes, self.features)
+        if sample_level == "episode":
+            pytorch_dataset = PyTorchDataset(episodes, self.features)
+        elif sample_level == "step":
+            pytorch_dataset = PyTorchStepDataset(episodes, self.features)
+        else:
+            raise ValueError("Unsupported sample level")
 
         return pytorch_dataset
 
@@ -779,6 +785,53 @@ class PyTorchDataset(Dataset):
         # Process the episode and its features here
         # For simplicity, let's assume we're just returning the episode
         return episode
+    
+    def __del__(self):
+        pass
+
+class PyTorchStepDataset(PyTorchDataset):
+    def __init__(self, episodes, features):
+        """
+        Initialize the dataset with the episodes and features.
+        WARNING: This implementation is preliminary and not optimized for performance!
+        :param episodes: A list of episodes loaded from the database.
+        :param features: A dictionary of features to be included in the dataset.
+        """
+        super().__init__(episodes, features)
+        logging.info("Setting up step dataloader. This may take a while.")
+        self.total_num_steps = 0
+        self.episode_lengths = []
+        for episode in tqdm(self.episodes):
+            n = episode.select(pl.len()).collect()
+            self.total_num_steps += n[0,0]
+            self.episode_lengths.append(n[0,0])
+        logging.info(f"Total number of steps: {self.total_num_steps}")
+        
+
+    def __getitem__(self, idx):
+        """
+        Retrieve the idx-th step from the dataset.
+        Depending on the structure, you may need to process the step
+        and its features here.
+        """
+        logger.info("Retrieving step at index", idx)
+        # Find the episode that contains the step
+        episode_idx = 0
+        while idx >= self.episode_lengths[episode_idx]:
+            idx -= self.episode_lengths[episode_idx]
+            episode_idx += 1
+        logger.info(f"Step is in episode {episode_idx}")
+        
+        e = self.episodes[episode_idx]
+        s = e.with_row_index().filter(pl.col("index").is_between(idx,idx)).collect()
+                
+        return s
+
+    def __len__(self):
+        """
+        Return the total number of steps in the dataset.
+        """
+        return self.total_num_steps
     
     def __del__(self):
         pass
