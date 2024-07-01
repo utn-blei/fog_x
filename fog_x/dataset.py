@@ -8,6 +8,7 @@ import polars
 import pandas
 from tqdm import tqdm
 from multiprocessing import Process
+import multiprocessing as mp
 
 from fog_x.database import (
     DatabaseConnector,
@@ -150,6 +151,7 @@ class Dataset:
 
         self.duplicate_warning_printed = False
         self.writer_process = None
+        mp.set_start_method("spawn") # we need to do this since default is fork and it doesn't work with polars
 
     def new_episode(self, metadata: Optional[Dict[str, Any]] = None) -> Episode:
         """
@@ -470,10 +472,12 @@ class Dataset:
                 for r in ret:
                     fog_episode.add(**r)
 
+
+
             if self.writer_process is not None and self.writer_process.is_alive():
                 self.writer_process.join()
             self.writer_process = Process(target=fog_episode.close)
-
+            self.writer_process.start() # running this inline for now ...
 
     def _prepare_rtx_metadata(
         self,
@@ -744,8 +748,9 @@ class Dataset:
         return hf_dataset
     
     def __del__(self):
-        if self.writer_process is not None and self.writer_process.is_alive():
-            self.writer_process.join()
+        if self.writer_process is not None:
+            if self.writer_process.is_alive():
+                self.writer_process.join()
     
 class PyTorchDataset(Dataset):
     def __init__(self, episodes, features):
@@ -774,3 +779,6 @@ class PyTorchDataset(Dataset):
         # Process the episode and its features here
         # For simplicity, let's assume we're just returning the episode
         return episode
+    
+    def __del__(self):
+        pass
