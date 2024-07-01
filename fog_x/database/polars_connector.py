@@ -57,10 +57,19 @@ class PolarsConnector:
             logger.debug(
                 f"Inserting data into {table_name}: {data} with {new_row} to table {self.tables[table_name]}"
             )
-            self.tables[table_name] = pl.concat(
-                [self.tables[table_name], new_row], how="align"
-            )
-            # logger.debug(f"table is now {self.tables[table_name]}")
+            
+            #self.tables[table_name] = pl.concat(
+            #    [self.tables[table_name], new_row], how="align"
+            #)
+            #logger.debug(f"table is now {self.tables[table_name]}")
+
+            ## WARNING: CHECK, WITH THE DEVELOPERS IF WE CAN DO THIS BELOW:
+
+            #if table is empty: 
+            if self.table_len[table_name] == 0:
+                self.tables[table_name] = new_row
+            else:
+                self.tables[table_name] = self.tables[table_name].vstack(new_row)
 
             self.table_len[table_name] += 1
 
@@ -198,7 +207,7 @@ class LazyFrameConnector(PolarsConnector):
         basename_template = f"{table_name}-{{i}}.parquet"
         
         # Set Compression
-        file_options = ds.ParquetFileFormat().make_write_options(compression='brotli', compression_level=9)
+        file_options = ds.ParquetFileFormat().make_write_options(compression='brotli', compression_level=5)
 
         ds.write_dataset(
             dataset,
